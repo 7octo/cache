@@ -1,0 +1,66 @@
+package detector
+
+import (
+	"context"
+	"sync"
+	"time"
+	
+	"github.com/patrickmn/go-cache"
+)
+
+type CachedThreatDetector struct {
+	cache           *cache.Cache
+	checkIntervals  []time.Duration
+	threatProcessor *ThreatProcessor
+	cleanupInterval time.Duration
+	mu              sync.Mutex
+	stopChan        chan struct{}
+}
+
+// ... (previous methods remain the same until checkEvents)
+
+func (d *CachedThreatDetector) checkEvents() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	
+	now := time.Now()
+	ctx := context.Background()
+	
+	for _, item := range d.cache.Items() {
+		eventID := item.Key
+		cachedEvt, ok := item.Object.(*cachedEvent)
+		if !ok {
+			d.cache.Delete(eventID)
+			continue
+		}
+		
+		if now.After(cachedEvt.NextCheck) {
+			// Check for threats
+			threats, err := d.threatProcessor.CheckForThreats(ctx, cachedEvt.Event)
+			if err != nil {
+				// Log error and continue
+				fmt.Printf("Error checking threats: %v\n", err)
+				continue
+			}
+			
+			// Select most relevant threat
+			if selectedThreat := selectMostRelevantThreat(threats, time.Now()); selectedThreat != nil {
+				// Process the threat
+				if err := d.threatProcessor.ProcessThreat(ctx, *selectedThreat); err != nil {
+					fmt.Printf("Error processing threat: %v\n", err)
+				}
+				d.cache.Delete(eventID)
+			} else {
+				// No threats found, schedule next check or delete
+				nextIndex := cachedEvt.CheckIndex + 1
+				if nextIndex < len(d.checkIntervals) {
+					cachedEvt.NextCheck = now.Add(d.checkIntervals[nextIndex])
+					cachedEvt.CheckIndex = nextIndex
+					d.cache.Set(eventID, cachedEvt, cache.DefaultExpiration)
+				} else {
+					d.cache.Delete(eventID)
+				}
+			}
+		}
+	}
+}
