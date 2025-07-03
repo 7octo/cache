@@ -1,0 +1,53 @@
+package detector
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+type HTTPThreatService struct {
+	client       *http.Client
+	threatAPIURL string
+}
+
+func NewHTTPThreatService(apiURL string) *HTTPThreatService {
+	return &HTTPThreatService{
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		threatAPIURL: apiURL,
+	}
+}
+
+func (s *HTTPThreatService) CheckForThreats(ctx context.Context, event interface{}) ([]Threat, error) {
+	reqBody, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.threatAPIURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var threats []Threat
+	if err := json.NewDecoder(resp.Body).Decode(&threats); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return threats, nil
+}
