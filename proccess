@@ -1,0 +1,60 @@
+package detector
+
+import (
+	"context"
+	"time"
+)
+
+type ThreatProcessor struct {
+	threatService ThreatChecker
+	// Add any dependencies like repositories, notification services, etc.
+}
+
+func NewThreatProcessor(service ThreatChecker) *ThreatProcessor {
+	return &ThreatProcessor{
+		threatService: service,
+	}
+}
+
+func (p *ThreatProcessor) ProcessThreat(ctx context.Context, threat Threat) error {
+	// Implement your threat processing logic here
+	// This could include:
+	// - Storing the threat in a database
+	// - Notifying security teams
+	// - Triggering mitigation actions
+	// - etc.
+	
+	// For now just log it
+	fmt.Printf("Processing threat: %+v\n", threat)
+	return nil
+}
+
+func (p *ThreatProcessor) CheckForThreats(ctx context.Context, event interface{}) ([]Threat, error) {
+	return p.threatService.CheckForThreats(ctx, event)
+}
+
+func selectMostRelevantThreat(threats []Threat, eventTime time.Time) *Threat {
+	if len(threats) == 0 {
+		return nil
+	}
+
+	var selected *Threat
+	minTimeDiff := time.Duration(1<<63 - 1) // Max duration
+
+	for _, threat := range threats {
+		timeDiff := absDuration(threat.Timestamp.Sub(eventTime))
+		if timeDiff < minTimeDiff {
+			minTimeDiff = timeDiff
+			selected = &threat
+		}
+	}
+
+	return selected
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
